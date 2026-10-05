@@ -3,6 +3,7 @@ package cordon
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"sort"
@@ -21,12 +22,14 @@ const bashInputSchema = `{"type":"object","properties":{"command":{"type":"strin
 
 // Sandbox is an isolated execution environment enforcing filesystem, network, and limit policies.
 type Sandbox struct {
-	policy   Policy
-	fs       fs.FS
-	net      netpolicy.Policy
-	registry *command.Registry
-	engine   *shell.Engine
-	mu       sync.RWMutex
+	policy       Policy
+	fs           fs.FS
+	net          netpolicy.Policy
+	registry     *command.Registry
+	engine       *shell.Engine
+	toolBindings map[string]ToolBinding
+	toolNames    []string
+	mu           sync.RWMutex
 }
 
 // New creates a new Sandbox configured with the specified Policy.
@@ -59,13 +62,40 @@ func New(policy Policy) (*Sandbox, error) {
 		Network:           policy.Network,
 	})
 
+	toolBindings := make(map[string]ToolBinding)
+	var toolNames []string
+	for _, b := range policy.Tools {
+		if b.Tool.Name != "" && b.Handler != nil {
+			if _, exists := toolBindings[b.Tool.Name]; !exists {
+				toolNames = append(toolNames, b.Tool.Name)
+			}
+			toolBindings[b.Tool.Name] = b
+		}
+	}
+
 	return &Sandbox{
-		policy:   policy,
-		fs:       fsys,
-		net:      policy.Network,
-		registry: reg,
-		engine:   engine,
+		policy:       policy,
+		fs:           fsys,
+		net:          policy.Network,
+		registry:     reg,
+		engine:       engine,
+		toolBindings: toolBindings,
+		toolNames:    toolNames,
 	}, nil
+}
+
+// RegisterTool registers an additional tool binding on the sandbox.
+func (s *Sandbox) RegisterTool(b ToolBinding) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if b.Tool.Name == "" || b.Handler == nil {
+		return
+	}
+	if _, exists := s.toolBindings[b.Tool.Name]; !exists {
+		s.toolNames = append(s.toolNames, b.Tool.Name)
+	}
+	s.toolBindings[b.Tool.Name] = b
 }
 
 // Resources returns the capability bundle for custom tools without exposing Sandbox internals.
@@ -96,6 +126,10 @@ func (s *Sandbox) Tools() []Tool {
 		InputSchema: json.RawMessage(bashInputSchema),
 	})
 
+	for _, name := range s.toolNames {
+		tools = append(tools, s.toolBindings[name].Tool)
+	}
+
 	return tools
 }
 
@@ -121,7 +155,29 @@ func (s *Sandbox) CallTool(ctx context.Context, name string, input json.RawMessa
 		}
 		return s.ExecBash(ctx, in.Command)
 	default:
-		return Result{}, fmt.Errorf("%w: %q", status.ErrUnknownTool, name)
+		s.mu.RLock()
+		b, ok := s.toolBindings[name]
+		s.mu.RUnlock()
+
+		if !ok {
+			return Result{}, fmt.Errorf("%w: %q", status.ErrUnknownTool, name)
+		}
+
+		var malformedErr error
+		sup := newCallSupervisor(ctx, s.policy.Limits)
+		res := sup.Execute(func(callCtx context.Context, stdout, stderr io.Writer, cb *commandBudget) (int, error) {
+			code, err := b.Handler(callCtx, input, s.Resources(), stdout, stderr)
+			if err != nil && errors.Is(err, status.ErrMalformedInput) {
+				malformedErr = err
+				return 0, nil
+			}
+			return code, err
+		})
+
+		if malformedErr != nil {
+			return Result{}, malformedErr
+		}
+		return res, nil
 	}
 }
 

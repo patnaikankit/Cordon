@@ -1,7 +1,9 @@
 package cordon
 
 import (
+	"context"
 	"encoding/json"
+	"io"
 	"strings"
 )
 
@@ -34,3 +36,15 @@ func (r Result) String() string {
 		return r.Stdout
 	}
 }
+
+// ToolHandler is a function that executes an SDK-neutral tool invocation.
+// It receives the caller context, raw JSON input, capabilities bundle, and output writers.
+// Writing to stdout/stderr automatically respects the per-call output budget and limits.
+type ToolHandler func(ctx context.Context, input json.RawMessage, caps Capabilities, stdout, stderr io.Writer) (int, error)
+
+// ToolBinding binds an advertised Tool descriptor to its execution handler.
+type ToolBinding struct {
+	Tool    Tool
+	Handler ToolHandler
+}
+

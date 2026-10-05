@@ -156,8 +156,40 @@ cordon/
   fs/                 Capability filesystem: MemFS, rooted path confinement, access rules
   netpolicy/          Network policy stubs (SSRF protection & dialing rules)
   shell/              Parser/interpreter integration (goccy/sh, dev files, exec middleware)
+  script/             Optional sandboxed Python and JavaScript interpreters
   docs/               Threat model, invariants, and architectural specifications
 ```
+
+---
+
+## Optional Script Interpreters (Python & JavaScript)
+
+Cordon provides optional pure-Go script interpreters in `script/` (`python` using Starlark, `js` using Goja). Because they reside in subpackages, users who only need core Cordon do not compile or link them.
+
+```go
+import (
+	"github.com/cordon-dev/cordon"
+	"github.com/cordon-dev/cordon/script"
+)
+
+// Enable python and js as AI agent tools and bash commands
+sb, err := cordon.New(cordon.Policy{
+	Commands: cordon.Commands(script.PythonCommand(), script.NodeCommand()),
+	Tools: []cordon.ToolBinding{
+		script.Python(),
+		script.JS(),
+	},
+})
+
+// Tools() advertises "bash", "python", "js"
+tools := sb.Tools()
+
+// Dispatch Python or JavaScript calls from AI agents
+res, err := sb.CallTool(ctx, "python", []byte(`{"code": "write_file('/app.txt', 'data'); print('ok')"`))
+```
+
+Scripts execute under the same filesystem, network, timeout, output budget, and memory policies with zero host imports, sockets, or subprocesses.
+
 
 ---
 

@@ -23,6 +23,10 @@ type Policy struct {
 
 	// Limits bounds execution resources for each call.
 	Limits Limits
+
+	// Tools optionally configures additional SDK-neutral tool bindings
+	// (such as python or js interpreters) advertised in Tools() and executable via CallTool().
+	Tools []ToolBinding
 }
 
 // CommandPolicy selects enabled commands and their execution environment.
@@ -45,6 +49,14 @@ func Commands(cmds ...command.Command) CommandPolicy {
 		Allow: cmds,
 	}
 }
+
+// With appends additional commands to the permitted list.
+func (p CommandPolicy) With(cmds ...command.Command) CommandPolicy {
+	cp := p
+	cp.Allow = append(append([]command.Command(nil), p.Allow...), cmds...)
+	return cp
+}
+
 
 // Limits bounds execution resources of a single tool call.
 type Limits struct {
