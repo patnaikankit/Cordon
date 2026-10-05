@@ -12,6 +12,7 @@ import (
 
 	"github.com/cordon-dev/cordon"
 	"github.com/cordon-dev/cordon/command"
+	"github.com/cordon-dev/cordon/commands"
 	"github.com/cordon-dev/cordon/fs"
 	"github.com/cordon-dev/cordon/internal/status"
 )
@@ -393,4 +394,32 @@ func TestSandbox_SharedFSWithCustomTools(t *testing.T) {
 		t.Errorf("got %q, want 'hello from custom tool'", res.Stdout)
 	}
 }
+
+func TestSandbox_WithCoreCommands(t *testing.T) {
+	mem := fs.Mem().Seed(map[string]string{
+		"/input.txt": "banana\napple\ncherry\napple\n",
+	})
+	sb, err := cordon.New(cordon.Policy{
+		Commands: cordon.Commands(commands.Core()...),
+		FS:       mem,
+	})
+	if err != nil {
+		t.Fatalf("New failed: %v", err)
+	}
+
+	res, err := sb.ExecBash(context.Background(), "cat /input.txt | sort | uniq -c > /output.txt")
+	if err != nil || res.IsError {
+		t.Fatalf("ExecBash pipeline failed: %v, stderr=%q", err, res.Stderr)
+	}
+
+	data, err := mem.ReadFile("/output.txt")
+	if err != nil {
+		t.Fatalf("ReadFile output failed: %v", err)
+	}
+	expected := "      2 apple\n      1 banana\n      1 cherry\n"
+	if string(data) != expected {
+		t.Errorf("got %q, want %q", string(data), expected)
+	}
+}
+
 
