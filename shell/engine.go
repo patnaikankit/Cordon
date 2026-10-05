@@ -18,6 +18,7 @@ import (
 	"github.com/cordon-dev/cordon/command"
 	"github.com/cordon-dev/cordon/fs"
 	"github.com/cordon-dev/cordon/internal/status"
+	"github.com/cordon-dev/cordon/netpolicy"
 )
 
 // Exit codes conforming to standard shell behavior.
@@ -49,6 +50,7 @@ type Config struct {
 	MaxCommandCount   int
 	MaxMemoryBytes    int64
 	MaxRecursionDepth int
+	Network           netpolicy.Policy
 }
 
 // Engine executes shell commands inside an isolated environment.
@@ -62,6 +64,7 @@ type Engine struct {
 	maxCommands  int
 	maxMemory    int64
 	maxRecursion int
+	network      netpolicy.Policy
 }
 
 // New constructs an Engine with safe environment isolation.
@@ -101,6 +104,7 @@ func New(cfg Config) *Engine {
 		maxCommands:  cfg.MaxCommandCount,
 		maxMemory:    cfg.MaxMemoryBytes,
 		maxRecursion: cfg.MaxRecursionDepth,
+		network:      cfg.Network,
 	}
 }
 
@@ -235,6 +239,7 @@ func (e *Engine) execMiddleware(next interp.ExecHandlerFunc) interp.ExecHandlerF
 			Stdout:  hc.Stdout,
 			Stderr:  hc.Stderr,
 			FS:      newDevFS(e.fs, hc.Stdout, hc.Stderr),
+			Network: e.network,
 		}
 
 		defer func() {

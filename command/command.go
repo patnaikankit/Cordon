@@ -9,6 +9,7 @@ import (
 	"github.com/goccy/sh/v3/expand"
 
 	"github.com/cordon-dev/cordon/fs"
+	"github.com/cordon-dev/cordon/netpolicy"
 )
 
 // Context carries everything an executing command may access.
@@ -24,6 +25,7 @@ type Context struct {
 	Stdout  io.Writer
 	Stderr  io.Writer
 	FS      fs.FS
+	Network netpolicy.Policy
 }
 
 // GetEnv returns the value of an environment variable from the sandboxed environment.

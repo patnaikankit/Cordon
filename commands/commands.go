@@ -27,6 +27,9 @@ func All() []command.Command {
 		// Data and Checksums
 		Base64,
 		Sha256sum,
+
+		// Network
+		Curl,
 	}
 }
 

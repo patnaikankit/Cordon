@@ -331,3 +331,32 @@ func (v *Volume) Rename(oldpath, newpath string) error {
 }
 
 var _ FS = (*Volume)(nil)
+
+// Wrap wraps an existing FS into a Volume with access rules and policies.
+func Wrap(base FS) *Volume {
+	var mem *MemFS
+	if m, ok := base.(*MemFS); ok {
+		mem = m
+	}
+	return &Volume{base: base, mem: mem}
+}
+
+// NewVolume wraps an existing FS into a Volume.
+func NewVolume(base FS) *Volume {
+	return Wrap(base)
+}
+
+// Host creates a Volume backed by a host directory.
+func Host(hostDir string, opts ...HostOption) (*Volume, error) {
+	h, err := NewHostFS(hostDir, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return Wrap(h), nil
+}
+
+// OverlayVolume creates a Volume backed by an OverlayFS.
+func OverlayVolume(upper *MemFS, lower FS) *Volume {
+	return Wrap(NewOverlay(upper, lower))
+}
+

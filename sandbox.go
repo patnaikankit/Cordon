@@ -56,6 +56,7 @@ func New(policy Policy) (*Sandbox, error) {
 		MaxCommandCount:   policy.Limits.MaxCommandCount,
 		MaxMemoryBytes:    policy.Limits.MaxMemoryBytes,
 		MaxRecursionDepth: policy.Limits.MaxRecursionDepth,
+		Network:           policy.Network,
 	})
 
 	return &Sandbox{
@@ -69,7 +70,7 @@ func New(policy Policy) (*Sandbox, error) {
 
 // Resources returns the capability bundle for custom tools without exposing Sandbox internals.
 func (s *Sandbox) Resources() Capabilities {
-	return NewCapabilities(s.fs, s.policy.Limits.Timeout)
+	return NewCapabilities(s.fs, s.net, s.policy.Limits.Timeout)
 }
 
 // Tools advertises every enabled execution surface.

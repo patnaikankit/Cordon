@@ -3,12 +3,18 @@ package commands_test
 import (
 	"bytes"
 	"context"
+	"errors"
+	"fmt"
+	"io"
+	"net"
+	"net/http"
 	"strings"
 	"testing"
 
 	"github.com/cordon-dev/cordon/command"
 	"github.com/cordon-dev/cordon/commands"
 	"github.com/cordon-dev/cordon/fs"
+	"github.com/cordon-dev/cordon/netpolicy"
 )
 
 func runCmd(t *testing.T, cmd command.Command, mem fs.FS, stdin string, args ...string) (string, string, int) {
@@ -470,16 +476,164 @@ func TestSha256sum(t *testing.T) {
 	}
 }
 
+type curlPipeListener struct {
+	conns  chan net.Conn
+	closed chan struct{}
+}
+
+func newCurlPipeListener() *curlPipeListener {
+	return &curlPipeListener{
+		conns:  make(chan net.Conn, 16),
+		closed: make(chan struct{}),
+	}
+}
+
+func (l *curlPipeListener) Accept() (net.Conn, error) {
+	select {
+	case c, ok := <-l.conns:
+		if !ok {
+			return nil, net.ErrClosed
+		}
+		return c, nil
+	case <-l.closed:
+		return nil, net.ErrClosed
+	}
+}
+
+func (l *curlPipeListener) Close() error {
+	select {
+	case <-l.closed:
+	default:
+		close(l.closed)
+	}
+	return nil
+}
+
+func (l *curlPipeListener) Addr() net.Addr {
+	return &net.TCPAddr{IP: net.ParseIP("93.184.216.34"), Port: 80}
+}
+
+func (l *curlPipeListener) DialContext(ctx context.Context, network, address string) (net.Conn, error) {
+	select {
+	case <-l.closed:
+		return nil, net.ErrClosed
+	default:
+	}
+	serverConn, clientConn := net.Pipe()
+	l.conns <- serverConn
+	return clientConn, nil
+}
+
+type curlMockResolver struct {
+	ips map[string][]net.IP
+}
+
+func (m *curlMockResolver) LookupIP(ctx context.Context, network, host string) ([]net.IP, error) {
+	if ips, ok := m.ips[host]; ok {
+		return ips, nil
+	}
+	return nil, fmt.Errorf("mock resolver: host not found %s", host)
+}
+
+func TestCurl(t *testing.T) {
+	mem := fs.Mem()
+
+	// 1. Zero network policy: curl should be denied by default
+	_, stderr, code := runCmd(t, commands.Curl, mem, "", "http://example.com/api")
+	if code == 0 || !strings.Contains(stderr, "denied") {
+		t.Fatalf("expected curl to fail under zero network policy, code=%d, stderr=%q", code, stderr)
+	}
+
+	// 2. Permitted network policy with in-memory pipe server
+	listener := newCurlPipeListener()
+	server := &http.Server{
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Method == "POST" {
+				data, _ := io.ReadAll(r.Body)
+				w.WriteHeader(http.StatusOK)
+				fmt.Fprintf(w, "echo post: %s", string(data))
+				return
+			}
+			w.Header().Set("X-Custom", "cordon-test")
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte("curl response ok"))
+		}),
+	}
+	go server.Serve(listener)
+	defer listener.Close()
+
+	netPol := netpolicy.Policy{
+		Allow: []netpolicy.Rule{
+			{Host: "api.example.com", Ports: []int{80}},
+		},
+		Resolver: &curlMockResolver{
+			ips: map[string][]net.IP{
+				"api.example.com": {net.ParseIP("93.184.216.34")},
+			},
+		},
+		Dialer: listener,
+	}
+
+	runCurl := func(args ...string) (string, string, int) {
+		var stdout, stderr bytes.Buffer
+		ec := &command.Context{
+			Ctx:     context.Background(),
+			Args:    append([]string{"curl"}, args...),
+			Stdout:  &stdout,
+			Stderr:  &stderr,
+			FS:      mem,
+			Network: netPol,
+		}
+		err := commands.Curl.Run(context.Background(), ec)
+		code := 0
+		var ee *command.ExitError
+		if errors.As(err, &ee) {
+			code = ee.Code
+		} else if err != nil {
+			code = 1
+		}
+		return stdout.String(), stderr.String(), code
+	}
+
+	// GET request
+	out, _, code := runCurl("http://api.example.com/data")
+	if code != 0 || out != "curl response ok" {
+		t.Fatalf("curl GET failed: code=%d, out=%q", code, out)
+	}
+
+	// -o write to filesystem
+	out, _, code = runCurl("-o", "/download.txt", "http://api.example.com/data")
+	if code != 0 || out != "" {
+		t.Fatalf("curl -o failed: code=%d, out=%q", code, out)
+	}
+	savedData, err := mem.ReadFile("/download.txt")
+	if err != nil || string(savedData) != "curl response ok" {
+		t.Fatalf("saved file mismatch: %v, %q", err, string(savedData))
+	}
+
+	// -i include headers
+	out, _, code = runCurl("-i", "http://api.example.com/data")
+	if code != 0 || !strings.Contains(out, "X-Custom: cordon-test") {
+		t.Fatalf("curl -i failed: %q", out)
+	}
+
+	// -X POST -d
+	out, _, code = runCurl("-X", "POST", "-d", "payload123", "http://api.example.com/post")
+	if code != 0 || out != "echo post: payload123" {
+		t.Fatalf("curl POST failed: code=%d, out=%q", code, out)
+	}
+}
+
 func TestAllAndCoreRegistration(t *testing.T) {
 	allCmds := commands.All()
-	if len(allCmds) != 17 {
-		t.Fatalf("expected 17 core commands in v1, got %d", len(allCmds))
+	if len(allCmds) != 18 {
+		t.Fatalf("expected 18 core commands in v1, got %d", len(allCmds))
 	}
 
 	expectedNames := map[string]bool{
 		"cat": true, "ls": true, "pwd": true, "mkdir": true, "rm": true, "cp": true, "mv": true,
 		"head": true, "tail": true, "wc": true, "grep": true, "sort": true, "uniq": true, "cut": true, "tr": true,
-		"base64": true, "sha256sum": true,
+		"base64": true, "sha256sum": true, "curl": true,
 	}
 
 	for _, c := range allCmds {

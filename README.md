@@ -175,6 +175,20 @@ See [`docs/threat-model.md`](docs/threat-model.md) for full threat modeling and 
 
 ---
 
+## Roadmap & Implementation Status
+
+- [x] **Phase 0 — Freeze Scope & Acceptance Criteria**: Threat model, security invariants, acceptance criteria.
+- [x] **Phase 1 — Core Types & Call Lifecycle**: `Policy`, `Limits`, `Tool`, `Result`, supervisor, budgets, and error taxonomy.
+- [x] **Phase 2 — Capability Filesystem**: `MemFS`, path normalization (`Clean`/`Resolve`), `Refuse`, `Hide`, byte limits (`MaxFileBytes`, `MaxBytes`).
+- [x] **Phase 3 — Bash Execution Without Host Fallback**: `goccy/sh` integration, pipeline execution, virtual `/dev` files, environment isolation, no host `$PATH` leaks.
+- [x] **Phase 4 — Standard Command Library**: Pure-Go implementations of `cat`, `ls`, `pwd`, `mkdir`, `rm`, `cp`, `mv`, `head`, `tail`, `wc`, `grep`, `sort`, `uniq`, `cut`, `tr`, `base64`, `sha256sum`, `curl`.
+- [x] **Phase 5 — Resource Limits & Supervision**: Wall-clock timeout enforcement, command budgets, output truncation, detached write guards.
+- [x] **Phase 6 — SSRF-Resistant Network Policy**: Host allowlists/denylists, DNS pre-resolution & IP pinning (rebinding guard), private/loopback/cloud-metadata blocking, cross-host redirect blocking, response-body limits, unified `curl` and Go `HTTPClient`.
+- [x] **Phase 7 — Host Mounts & Copy-on-Write Overlay**: Rooted host directory mounts (`HostFS`), strict symlink escape confinement, read-only and read-write modes, in-memory copy-on-write overlay (`OverlayFS`) with whiteout tracking.
+- [ ] **Phase 8 — Script Interpreters**: Sandboxed Python and JavaScript runtimes.
+
+---
+
 ## Running Tests
 
 Run the full test suite with race detection enabled:
