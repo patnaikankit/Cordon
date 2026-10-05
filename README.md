@@ -175,19 +175,6 @@ See [`docs/threat-model.md`](docs/threat-model.md) for full threat modeling and 
 
 ---
 
-## Roadmap & Implementation Status
-
-- [x] **Phase 0 — Freeze Scope & Acceptance Criteria**: Threat model, security invariants, acceptance criteria.
-- [x] **Phase 1 — Core Types & Call Lifecycle**: `Policy`, `Limits`, `Tool`, `Result`, supervisor, budgets, and error taxonomy.
-- [x] **Phase 2 — Capability Filesystem**: `MemFS`, path normalization (`Clean`/`Resolve`), `Refuse`, `Hide`, byte limits (`MaxFileBytes`, `MaxBytes`).
-- [x] **Phase 3 — Bash Execution Without Host Fallback**: `goccy/sh` integration, pipeline execution, virtual `/dev` files, environment isolation, no host `$PATH` leaks.
-- [ ] **Phase 4 — Standard Command Library**: Pure-Go implementations of `cat`, `ls`, `mkdir`, `rm`, `cp`, `mv`, `head`, `tail`, `wc`, `grep`, `sort`, `uniq`, `cut`, `tr`.
-- [ ] **Phase 5 — Resource Limits & Supervision**: Wall-clock timeout enforcement, command budgets, output truncation.
-- [ ] **Phase 6 — SSRF-Resistant Network Policy**: Host allowlists, DNS rebinding protection, loopback/private IP blocking, `curl`.
-- [ ] **Phase 7 — Host Mounts & Copy-on-Write Overlay**: Read-only and CoW host mounts.
-- [ ] **Phase 8 — Script Interpreters**: Sandboxed Python and JavaScript runtimes.
-
----
 
 ## Running Tests
 
