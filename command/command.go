@@ -6,6 +6,8 @@ import (
 	"io"
 	"strings"
 
+	"github.com/goccy/sh/v3/expand"
+
 	"github.com/cordon-dev/cordon/fs"
 )
 
@@ -13,13 +15,35 @@ import (
 // Commands must use these handles rather than the host os/net packages
 // to ensure that Cordon's capability boundaries and policy confinement are preserved.
 type Context struct {
+	Ctx     context.Context
 	Args    []string
-	Env     map[string]string
+	Env     expand.Environ
+	Dir     string
 	WorkDir string
 	Stdin   io.Reader
 	Stdout  io.Writer
 	Stderr  io.Writer
 	FS      fs.FS
+}
+
+// GetEnv returns the value of an environment variable from the sandboxed environment.
+func (c *Context) GetEnv(name string) string {
+	if c.Env == nil {
+		return ""
+	}
+	return c.Env.Get(name).String()
+}
+
+// Resolve resolves a relative or absolute path relative to the command's current working directory.
+func (c *Context) Resolve(name string) string {
+	dir := c.Dir
+	if dir == "" {
+		dir = c.WorkDir
+	}
+	if dir == "" {
+		dir = "/"
+	}
+	return fs.Resolve(dir, name)
 }
 
 // StdinReader returns Stdin or an empty reader if Stdin is nil,

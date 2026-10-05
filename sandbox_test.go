@@ -318,9 +318,9 @@ func TestSandbox_FSPersistenceAcrossCalls(t *testing.T) {
 		return ec.FS.WriteFile(p, []byte(content), 0o644)
 	})
 
-	readCmd := command.New("read", func(ctx context.Context, ec *command.Context) error {
+	readCmd := command.New("readfile", func(ctx context.Context, ec *command.Context) error {
 		if len(ec.Args) < 2 {
-			return ec.Fail(1, "usage: read <path>\n")
+			return ec.Fail(1, "usage: readfile <path>\n")
 		}
 		p := ec.Args[1]
 		data, err := ec.FS.ReadFile(p)
@@ -349,7 +349,7 @@ func TestSandbox_FSPersistenceAcrossCalls(t *testing.T) {
 	}
 
 	// Call 2: read the file back
-	res2, err := sb.ExecBash(ctx, "read /data/session.log")
+	res2, err := sb.ExecBash(ctx, "readfile /data/session.log")
 	if err != nil || res2.IsError {
 		t.Fatalf("call 2 read failed: %v, stderr=%q", err, res2.Stderr)
 	}

@@ -3,7 +3,6 @@ package cordon
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"sort"
@@ -14,6 +13,7 @@ import (
 	"github.com/cordon-dev/cordon/fs"
 	"github.com/cordon-dev/cordon/internal/status"
 	"github.com/cordon-dev/cordon/netpolicy"
+	"github.com/cordon-dev/cordon/shell"
 )
 
 // bashInputSchema defines the JSON schema for the bash tool input.
@@ -25,6 +25,7 @@ type Sandbox struct {
 	fs       fs.FS
 	net      netpolicy.Policy
 	registry *command.Registry
+	engine   *shell.Engine
 	mu       sync.RWMutex
 }
 
@@ -47,11 +48,22 @@ func New(policy Policy) (*Sandbox, error) {
 		workDir = "/"
 	}
 
+	engine := shell.New(shell.Config{
+		FS:                fsys,
+		Reg:               reg,
+		WorkDir:           workDir,
+		Env:               policy.Commands.Env,
+		MaxCommandCount:   policy.Limits.MaxCommandCount,
+		MaxMemoryBytes:    policy.Limits.MaxMemoryBytes,
+		MaxRecursionDepth: policy.Limits.MaxRecursionDepth,
+	})
+
 	return &Sandbox{
 		policy:   policy,
 		fs:       fsys,
 		net:      policy.Network,
 		registry: reg,
+		engine:   engine,
 	}, nil
 }
 
@@ -105,8 +117,8 @@ func (s *Sandbox) CallTool(ctx context.Context, name string, input json.RawMessa
 }
 
 // ExecBash runs a shell command string in the sandbox under policy supervision.
-// In Phase 1, this operates as a call supervisor stub dispatching allowlisted commands
-// without pulling in a full shell or network dependency.
+// Shell commands run against an isolated virtual filesystem and explicitly allowlisted
+// Go commands—never falling back to the host PATH.
 func (s *Sandbox) ExecBash(ctx context.Context, commandStr string) (Result, error) {
 	sup := newCallSupervisor(ctx, s.policy.Limits)
 
@@ -121,53 +133,9 @@ func (s *Sandbox) ExecBash(ctx context.Context, commandStr string) (Result, erro
 			return status.StatusPolicyDenied, status.ErrPolicyDenied
 		}
 
-		// Simple command tokenization for Phase 1 stub execution.
-		// Phase 3 will introduce mvdan.cc/sh integration for full bash syntax.
-		parts := strings.Fields(trimmed)
-		cmdName := parts[0]
-		args := parts[1:]
-
-		// Enforce command budget
-		if err := cb.Acquire(); err != nil {
-			return status.StatusLimitExceeded, err
-		}
-
-		cmd, ok := s.registry.Lookup(cmdName)
-		if !ok {
-			fmt.Fprintf(stderr, "cordon: command not found: %s\n", cmdName)
-			return status.StatusNotFound, status.ErrCommandNotFound
-		}
-
-		env := make(map[string]string)
-		for k, v := range s.policy.Commands.Env {
-			env[k] = v
-		}
-
-		workDir := s.policy.Commands.WorkDir
-		if workDir == "" {
-			workDir = "/"
-		}
-
-		ec := &command.Context{
-			Args:    append([]string{cmdName}, args...),
-			Env:     env,
-			WorkDir: workDir,
-			Stdin:   strings.NewReader(""),
-			Stdout:  stdout,
-			Stderr:  stderr,
-			FS:      s.fs,
-		}
-
-		err := cmd.Run(callCtx, ec)
-		if err != nil {
-			var exitErr *command.ExitError
-			if errors.As(err, &exitErr) {
-				return exitErr.Code, nil
-			}
-			return status.StatusError, err
-		}
-
-		return status.StatusOK, nil
+		// Execute through the sandboxed shell engine.
+		code, err := s.engine.Run(callCtx, commandStr, strings.NewReader(""), stdout, stderr)
+		return code, err
 	})
 
 	return res, nil
