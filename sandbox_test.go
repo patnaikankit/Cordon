@@ -12,6 +12,7 @@ import (
 
 	"github.com/cordon-dev/cordon"
 	"github.com/cordon-dev/cordon/command"
+	"github.com/cordon-dev/cordon/fs"
 	"github.com/cordon-dev/cordon/internal/status"
 )
 
@@ -301,3 +302,95 @@ func TestCapabilitiesBundle(t *testing.T) {
 		t.Errorf("unexpected deadline duration: %v", time.Until(deadline))
 	}
 }
+
+func TestSandbox_FSPersistenceAcrossCalls(t *testing.T) {
+	writeCmd := command.New("write", func(ctx context.Context, ec *command.Context) error {
+		if len(ec.Args) < 3 {
+			return ec.Fail(1, "usage: write <path> <content>\n")
+		}
+		p := ec.Args[1]
+		content := ec.Args[2]
+		dir := "/"
+		if lastSlash := strings.LastIndex(p, "/"); lastSlash > 0 {
+			dir = p[:lastSlash]
+		}
+		_ = ec.FS.MkdirAll(dir, 0o755)
+		return ec.FS.WriteFile(p, []byte(content), 0o644)
+	})
+
+	readCmd := command.New("read", func(ctx context.Context, ec *command.Context) error {
+		if len(ec.Args) < 2 {
+			return ec.Fail(1, "usage: read <path>\n")
+		}
+		p := ec.Args[1]
+		data, err := ec.FS.ReadFile(p)
+		if err != nil {
+			return ec.Fail(1, "read: %v\n", err)
+		}
+		_, err = ec.Stdout.Write(data)
+		return err
+	})
+
+	mem := fs.Mem()
+	sb, err := cordon.New(cordon.Policy{
+		Commands: cordon.Commands(writeCmd, readCmd),
+		FS:       mem,
+	})
+	if err != nil {
+		t.Fatalf("New failed: %v", err)
+	}
+
+	ctx := context.Background()
+
+	// Call 1: write a file
+	res1, err := sb.ExecBash(ctx, "write /data/session.log session_active")
+	if err != nil || res1.IsError {
+		t.Fatalf("call 1 write failed: %v, stderr=%q", err, res1.Stderr)
+	}
+
+	// Call 2: read the file back
+	res2, err := sb.ExecBash(ctx, "read /data/session.log")
+	if err != nil || res2.IsError {
+		t.Fatalf("call 2 read failed: %v, stderr=%q", err, res2.Stderr)
+	}
+	if res2.Stdout != "session_active" {
+		t.Errorf("got %q, want 'session_active'", res2.Stdout)
+	}
+}
+
+func TestSandbox_SharedFSWithCustomTools(t *testing.T) {
+	catCmd := command.New("cat", func(ctx context.Context, ec *command.Context) error {
+		data, err := ec.FS.ReadFile(ec.Args[1])
+		if err != nil {
+			return ec.Fail(1, "cat error: %v\n", err)
+		}
+		_, err = ec.Stdout.Write(data)
+		return err
+	})
+
+	mem := fs.Mem()
+	sb, err := cordon.New(cordon.Policy{
+		Commands: cordon.Commands(catCmd),
+		FS:       mem,
+	})
+	if err != nil {
+		t.Fatalf("New failed: %v", err)
+	}
+
+	// Custom tool writes via Resources().FS()
+	caps := sb.Resources()
+	err = caps.FS().WriteFile("/shared_by_tool.txt", []byte("hello from custom tool"), 0o644)
+	if err != nil {
+		t.Fatalf("custom tool WriteFile failed: %v", err)
+	}
+
+	// ExecBash reads the file created by the custom tool
+	res, err := sb.ExecBash(context.Background(), "cat /shared_by_tool.txt")
+	if err != nil || res.IsError {
+		t.Fatalf("ExecBash cat failed: %v, stderr=%q", err, res.Stderr)
+	}
+	if res.Stdout != "hello from custom tool" {
+		t.Errorf("got %q, want 'hello from custom tool'", res.Stdout)
+	}
+}
+
