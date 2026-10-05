@@ -102,6 +102,14 @@ func (s *Sandbox) Tools() []Tool {
 // A dispatch failure (unknown tool or malformed input) returns a Go error.
 // A tool execution failure (policy denial, exit code, limit breach) returns a normal Result.
 func (s *Sandbox) CallTool(ctx context.Context, name string, input json.RawMessage) (Result, error) {
+	if s.policy.Limits.MaxInputBytes > 0 && int64(len(input)) > s.policy.Limits.MaxInputBytes {
+		return Result{
+			Stderr:   "cordon: input byte limit exceeded\n",
+			ExitCode: status.StatusLimitExceeded,
+			IsError:  true,
+		}, nil
+	}
+
 	switch name {
 	case "bash":
 		var in struct {
@@ -120,6 +128,14 @@ func (s *Sandbox) CallTool(ctx context.Context, name string, input json.RawMessa
 // Shell commands run against an isolated virtual filesystem and explicitly allowlisted
 // Go commands—never falling back to the host PATH.
 func (s *Sandbox) ExecBash(ctx context.Context, commandStr string) (Result, error) {
+	if s.policy.Limits.MaxInputBytes > 0 && int64(len(commandStr)) > s.policy.Limits.MaxInputBytes {
+		return Result{
+			Stderr:   "cordon: input byte limit exceeded\n",
+			ExitCode: status.StatusLimitExceeded,
+			IsError:  true,
+		}, nil
+	}
+
 	sup := newCallSupervisor(ctx, s.policy.Limits)
 
 	res := sup.Execute(func(callCtx context.Context, stdout, stderr io.Writer, cb *commandBudget) (int, error) {
@@ -133,8 +149,8 @@ func (s *Sandbox) ExecBash(ctx context.Context, commandStr string) (Result, erro
 			return status.StatusPolicyDenied, status.ErrPolicyDenied
 		}
 
-		// Execute through the sandboxed shell engine.
-		code, err := s.engine.Run(callCtx, commandStr, strings.NewReader(""), stdout, stderr)
+		// Execute through the sandboxed shell engine with per-call command budget.
+		code, err := s.engine.RunWithBudget(callCtx, commandStr, strings.NewReader(""), stdout, stderr, cb)
 		return code, err
 	})
 

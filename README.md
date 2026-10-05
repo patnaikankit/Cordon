@@ -175,7 +175,6 @@ See [`docs/threat-model.md`](docs/threat-model.md) for full threat modeling and 
 
 ---
 
-
 ## Running Tests
 
 Run the full test suite with race detection enabled:

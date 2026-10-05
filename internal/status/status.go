@@ -21,6 +21,8 @@ var (
 	ErrCommandNotFound = errors.New("cordon: command not found")
 	ErrCommandLimit    = errors.New("cordon: command count limit exceeded")
 	ErrOutputLimit     = errors.New("cordon: output byte limit exceeded")
+	ErrInputLimit      = errors.New("cordon: input byte limit exceeded")
+	ErrCallClosed      = errors.New("cordon: call terminated")
 	ErrTimeout         = errors.New("cordon: execution timed out")
 	ErrCanceled        = errors.New("cordon: execution canceled")
 	ErrPanic           = errors.New("cordon: execution panicked")

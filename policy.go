@@ -57,6 +57,9 @@ type Limits struct {
 	// MaxOutputBytes, if non-zero, caps the combined stdout + stderr byte output of a single call.
 	MaxOutputBytes int64
 
+	// MaxInputBytes, if non-zero, bounds tool input JSON payload and command string length.
+	MaxInputBytes int64
+
 	// MaxMemoryBytes, if non-zero, caps memory for runtimes/interpreters that support a hard limit.
 	MaxMemoryBytes int64
 

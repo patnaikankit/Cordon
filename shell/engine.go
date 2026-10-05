@@ -17,6 +17,7 @@ import (
 
 	"github.com/cordon-dev/cordon/command"
 	"github.com/cordon-dev/cordon/fs"
+	"github.com/cordon-dev/cordon/internal/status"
 )
 
 // Exit codes conforming to standard shell behavior.
@@ -29,7 +30,12 @@ const (
 )
 
 // ErrCommandLimit is returned when command executions exceed MaxCommandCount.
-var ErrCommandLimit = errors.New("command count limit exceeded")
+var ErrCommandLimit = status.ErrCommandLimit
+
+// CommandAcquirer defines an interface for acquiring execution budget slots.
+type CommandAcquirer interface {
+	Acquire() error
+}
 
 // errHostProbe is returned when a host-probing builtin (such as type or command -v) is invoked.
 var errHostProbe = errors.New("host-probing builtin refused")
@@ -100,7 +106,17 @@ func New(cfg Config) *Engine {
 
 // Run parses and executes a command string under policy enforcement.
 func (e *Engine) Run(ctx context.Context, commandStr string, stdin io.Reader, stdout, stderr io.Writer) (int, error) {
-	file, err := syntax.NewParser(syntax.RecursionLimit(e.maxRecursion)).Parse(strings.NewReader(commandStr), "")
+	return e.RunWithBudget(ctx, commandStr, stdin, stdout, stderr, nil)
+}
+
+// RunWithBudget parses and executes a command string under policy enforcement using a specific command budget.
+func (e *Engine) RunWithBudget(ctx context.Context, commandStr string, stdin io.Reader, stdout, stderr io.Writer, cb CommandAcquirer) (int, error) {
+	recLimit := e.maxRecursion
+	if recLimit <= 0 {
+		recLimit = 256
+	}
+
+	file, err := syntax.NewParser(syntax.RecursionLimit(recLimit)).Parse(strings.NewReader(commandStr), "")
 	if err != nil {
 		return ExitUsage, err
 	}
@@ -116,13 +132,17 @@ func (e *Engine) Run(ctx context.Context, commandStr string, stdin io.Reader, st
 		interp.StdIO(stdin, stdout, stderr),
 		interp.Env(e.env),
 		interp.MaxExpandBytes(e.maxMemory),
-		interp.RecursionLimit(e.maxRecursion),
+		interp.RecursionLimit(recLimit),
 		interp.ExecHandlers(e.execMiddleware),
 		interp.OpenHandler(e.openHandler),
 		interp.StatHandler(e.statHandler),
 		interp.ReadDirHandler2(e.readDirHandler),
 		interp.CallHandler(func(_ context.Context, args []string) ([]string, error) {
-			if e.maxCommands > 0 && count.Add(1) > int64(e.maxCommands) {
+			if cb != nil {
+				if err := cb.Acquire(); err != nil {
+					return nil, err
+				}
+			} else if e.maxCommands > 0 && count.Add(1) > int64(e.maxCommands) {
 				return nil, ErrCommandLimit
 			}
 			if name := hostProbeName(args); name != "" {

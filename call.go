@@ -8,6 +8,7 @@ import (
 	"io"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/cordon-dev/cordon/internal/status"
 )
@@ -19,6 +20,7 @@ type outputBudget struct {
 	written int64
 	max     int64
 	limited bool
+	closed  bool
 }
 
 // limitedWriter wraps an io.Writer to enforce a shared outputBudget.
@@ -30,6 +32,10 @@ type limitedWriter struct {
 func (l *limitedWriter) Write(p []byte) (int, error) {
 	l.budget.mu.Lock()
 	defer l.budget.mu.Unlock()
+
+	if l.budget.closed {
+		return 0, status.ErrCallClosed
+	}
 
 	// If max <= 0, writes are serialized but uncapped.
 	if l.budget.max <= 0 {
@@ -86,6 +92,14 @@ func (b *commandBudget) IsLimited() bool {
 	return b.limited.Load()
 }
 
+// CommandBudget bounds the total number of command executions within a single call.
+type CommandBudget = commandBudget
+
+// NewCommandBudget creates a new CommandBudget instance with the given maximum limit.
+func NewCommandBudget(max int) *CommandBudget {
+	return newCommandBudget(max)
+}
+
 // callSupervisor oversees execution lifecycle, cancellation, and budgets for a single call.
 type callSupervisor struct {
 	ctx       context.Context
@@ -122,6 +136,9 @@ func newCallSupervisor(parent context.Context, limits Limits) *callSupervisor {
 
 	cleanup := func() {
 		cancel()
+		outBudget.mu.Lock()
+		outBudget.closed = true
+		outBudget.mu.Unlock()
 	}
 
 	return &callSupervisor{
@@ -172,9 +189,16 @@ func (cs *callSupervisor) Execute(fn runFn) Result {
 	select {
 	case <-cs.ctx.Done():
 		cs.outBudget.mu.Lock()
+		cs.outBudget.closed = true
 		stdoutStr := cs.stdoutBuf.String()
 		stderrStr := cs.stderrBuf.String()
 		cs.outBudget.mu.Unlock()
+
+		// Wait briefly for the owned goroutine to finish cooperatively.
+		select {
+		case <-done:
+		case <-time.After(50 * time.Millisecond):
+		}
 
 		exitCode := status.StatusError
 		if errors.Is(cs.ctx.Err(), context.DeadlineExceeded) {
@@ -224,6 +248,16 @@ func (cs *callSupervisor) Execute(fn runFn) Result {
 		case errors.Is(res.err, status.ErrOutputLimit) || wasLimited:
 			if exitCode == 0 {
 				exitCode = status.StatusLimitExceeded
+			}
+			if stderrStr == "" {
+				stderrStr = "cordon: output byte limit exceeded\n"
+			}
+		case errors.Is(res.err, status.ErrInputLimit):
+			if exitCode == 0 {
+				exitCode = status.StatusLimitExceeded
+			}
+			if stderrStr == "" {
+				stderrStr = "cordon: input byte limit exceeded\n"
 			}
 		case errors.Is(res.err, status.ErrCommandNotFound):
 			if exitCode == 0 {
