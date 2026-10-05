@@ -110,6 +110,9 @@ func (grepCmd) Run(ctx context.Context, ec *command.Context) error {
 
 	g.withName = len(targets) > 1 || recursive
 	for _, t := range targets {
+		if ec.Ctx != nil && ec.Ctx.Err() != nil {
+			return ec.Ctx.Err()
+		}
 		data, rerr := ec.FS.ReadFile(t.abs)
 		if rerr != nil {
 			ec.Errorf("grep: %s: %s\n", t.disp, errMsg(rerr))
@@ -128,6 +131,9 @@ func grepData(ec *command.Context, g grepOpts, name string, data []byte) bool {
 	cnt := 0
 	lineNo := 0
 	for _, raw := range splitLines(data) {
+		if ec.Ctx != nil && ec.Ctx.Err() != nil {
+			return false
+		}
 		lineNo++
 		if g.re.Match(raw) == g.invert {
 			continue

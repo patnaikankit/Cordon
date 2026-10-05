@@ -57,6 +57,9 @@ func (uniqCmd) Run(ctx context.Context, ec *command.Context) error {
 	var cur string
 	n := 0
 	for _, line := range lines {
+		if ctx != nil && ctx.Err() != nil {
+			return ctx.Err()
+		}
 		switch {
 		case n == 0:
 			cur, n = line, 1

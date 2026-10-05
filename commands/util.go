@@ -2,6 +2,8 @@ package commands
 
 import (
 	"bufio"
+	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -52,6 +54,9 @@ func gatherInput(ec *command.Context, cmd string, files []string) ([]byte, int) 
 	var buf []byte
 	exit := 0
 	for _, name := range files {
+		if ec.Ctx != nil && ec.Ctx.Err() != nil {
+			return nil, 1
+		}
 		var (
 			data []byte
 			err  error
@@ -75,7 +80,63 @@ func readAll(ec *command.Context) ([]byte, error) {
 	if ec.Stdin == nil {
 		return nil, nil
 	}
-	return io.ReadAll(ec.Stdin)
+	return readAllContext(ec.Ctx, ec.StdinReader())
+}
+
+func readAllContext(ctx context.Context, r io.Reader) ([]byte, error) {
+	if r == nil {
+		return nil, nil
+	}
+	var buf bytes.Buffer
+	b := make([]byte, 32*1024)
+	for {
+		if ctx != nil && ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		n, err := r.Read(b)
+		if n > 0 {
+			buf.Write(b[:n])
+		}
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				return buf.Bytes(), nil
+			}
+			return nil, err
+		}
+	}
+}
+
+func copyContext(ctx context.Context, dst io.Writer, src io.Reader) (int64, error) {
+	var written int64
+	buf := make([]byte, 32*1024)
+	for {
+		if ctx != nil && ctx.Err() != nil {
+			return written, ctx.Err()
+		}
+		nr, er := src.Read(buf)
+		if nr > 0 {
+			nw, ew := dst.Write(buf[0:nr])
+			if nw < 0 || nr < nw {
+				nw = 0
+				if ew == nil {
+					ew = errors.New("invalid write")
+				}
+			}
+			written += int64(nw)
+			if ew != nil {
+				return written, ew
+			}
+			if nr != nw {
+				return written, io.ErrShortWrite
+			}
+		}
+		if er != nil {
+			if errors.Is(er, io.EOF) {
+				return written, nil
+			}
+			return written, er
+		}
+	}
 }
 
 const maxLineBytes = 16 << 20

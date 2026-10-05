@@ -28,9 +28,9 @@ func (headCmd) Run(ctx context.Context, ec *command.Context) error {
 
 	emit := func(r io.Reader) error {
 		if byteMode {
-			return headEmitBytes(ec.Stdout, r, n, allButLast)
+			return headEmitBytes(ctx, ec.Stdout, r, n, allButLast)
 		}
-		return headEmit(ec.Stdout, r, n, allButLast)
+		return headEmit(ctx, ec.Stdout, r, n, allButLast)
 	}
 
 	if len(o.args) == 0 {
@@ -65,11 +65,14 @@ func (headCmd) Run(ctx context.Context, ec *command.Context) error {
 	return command.Exit(exit)
 }
 
-func headEmit(w io.Writer, r io.Reader, n int, allButLast bool) error {
+func headEmit(ctx context.Context, w io.Writer, r io.Reader, n int, allButLast bool) error {
 	sc := newLineScanner(r)
 	if allButLast {
 		var lines []string
 		for sc.Scan() {
+			if ctx != nil && ctx.Err() != nil {
+				return ctx.Err()
+			}
 			lines = append(lines, sc.Text())
 		}
 		if err := sc.Err(); err != nil {
@@ -77,30 +80,60 @@ func headEmit(w io.Writer, r io.Reader, n int, allButLast bool) error {
 		}
 		limit := max(len(lines)-n, 0)
 		for _, l := range lines[:limit] {
+			if ctx != nil && ctx.Err() != nil {
+				return ctx.Err()
+			}
 			fmt.Fprintln(w, l)
 		}
 		return nil
 	}
 	for count := 0; count < n && sc.Scan(); count++ {
+		if ctx != nil && ctx.Err() != nil {
+			return ctx.Err()
+		}
 		fmt.Fprintln(w, sc.Text())
 	}
 	return sc.Err()
 }
 
-func headEmitBytes(w io.Writer, r io.Reader, n int, allButLast bool) error {
+func headEmitBytes(ctx context.Context, w io.Writer, r io.Reader, n int, allButLast bool) error {
 	if allButLast {
-		data, err := io.ReadAll(r)
+		data, err := readAllContext(ctx, r)
 		if err != nil {
 			return err
 		}
 		_, err = w.Write(data[:max(len(data)-n, 0)])
 		return err
 	}
-	_, err := io.CopyN(w, r, int64(n))
-	if errors.Is(err, io.EOF) {
-		return nil
+	buf := make([]byte, min(n, 32*1024))
+	var remaining int64 = int64(n)
+	for remaining > 0 {
+		if ctx != nil && ctx.Err() != nil {
+			return ctx.Err()
+		}
+		toRead := int64(len(buf))
+		if remaining < toRead {
+			toRead = remaining
+		}
+		nr, er := r.Read(buf[:toRead])
+		if nr > 0 {
+			nw, ew := w.Write(buf[:nr])
+			remaining -= int64(nw)
+			if ew != nil {
+				return ew
+			}
+			if nw != nr {
+				return io.ErrShortWrite
+			}
+		}
+		if er != nil {
+			if errors.Is(er, io.EOF) {
+				return nil
+			}
+			return er
+		}
 	}
-	return err
+	return nil
 }
 
 func headTailCount(o opts) (int, byte, bool, string) {

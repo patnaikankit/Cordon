@@ -26,11 +26,14 @@ func (tailCmd) Run(ctx context.Context, ec *command.Context) error {
 
 	emit := func(r io.Reader) error {
 		if byteMode {
-			return tailEmitBytes(ec.Stdout, r, n, fromStart)
+			return tailEmitBytes(ctx, ec.Stdout, r, n, fromStart)
 		}
 		sc := newLineScanner(r)
 		var lines []string
 		for sc.Scan() {
+			if ctx != nil && ctx.Err() != nil {
+				return ctx.Err()
+			}
 			lines = append(lines, sc.Text())
 		}
 		if err := sc.Err(); err != nil {
@@ -43,6 +46,9 @@ func (tailCmd) Run(ctx context.Context, ec *command.Context) error {
 			start = len(lines) - n
 		}
 		for _, l := range lines[start:] {
+			if ctx != nil && ctx.Err() != nil {
+				return ctx.Err()
+			}
 			fmt.Fprintln(ec.Stdout, l)
 		}
 		return nil
@@ -58,6 +64,9 @@ func (tailCmd) Run(ctx context.Context, ec *command.Context) error {
 	exit := 0
 	multi := len(o.args) > 1
 	for i, name := range o.args {
+		if ctx != nil && ctx.Err() != nil {
+			return ctx.Err()
+		}
 		data, err := ec.FS.ReadFile(ec.Resolve(name))
 		if err != nil {
 			ec.Errorf("tail: cannot open '%s' for reading: %s\n", name, errMsg(err))
@@ -78,8 +87,8 @@ func (tailCmd) Run(ctx context.Context, ec *command.Context) error {
 	return command.Exit(exit)
 }
 
-func tailEmitBytes(w io.Writer, r io.Reader, n int, fromStart bool) error {
-	data, err := io.ReadAll(r)
+func tailEmitBytes(ctx context.Context, w io.Writer, r io.Reader, n int, fromStart bool) error {
+	data, err := readAllContext(ctx, r)
 	if err != nil {
 		return err
 	}

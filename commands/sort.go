@@ -86,6 +86,9 @@ func (sortCmd) Run(ctx context.Context, ec *command.Context) error {
 	prevKey := ""
 	havePrev := false
 	for _, line := range lines {
+		if ctx != nil && ctx.Err() != nil {
+			return ctx.Err()
+		}
 		k := keyOf(line)
 		if gUnique && havePrev && compareKey(prevKey, k, numeric, fold) == 0 {
 			continue
@@ -94,6 +97,9 @@ func (sortCmd) Run(ctx context.Context, ec *command.Context) error {
 		prevKey, havePrev = k, true
 	}
 	for _, line := range out {
+		if ctx != nil && ctx.Err() != nil {
+			return ctx.Err()
+		}
 		fmt.Fprintln(ec.Stdout, line)
 	}
 	return command.Exit(exit)

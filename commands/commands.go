@@ -23,6 +23,10 @@ func All() []command.Command {
 		Uniq,
 		Cut,
 		Tr,
+
+		// Data and Checksums
+		Base64,
+		Sha256sum,
 	}
 }
 

@@ -49,6 +49,9 @@ func (cutCmd) Run(ctx context.Context, ec *command.Context) error {
 
 	data, exit := gatherInput(ec, "cut", o.args)
 	for _, line := range stringLines(data) {
+		if ctx != nil && ctx.Err() != nil {
+			return ctx.Err()
+		}
 		if byChar {
 			ec.Stdout.Write([]byte(selectItems(strings.Split(line, ""), ranges, "") + "\n"))
 			continue

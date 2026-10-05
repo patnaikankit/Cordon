@@ -37,6 +37,9 @@ func (trCmd) Run(ctx context.Context, ec *command.Context) error {
 	var last rune
 	haveLast := false
 	for _, r := range string(data) {
+		if ctx != nil && ctx.Err() != nil {
+			return ctx.Err()
+		}
 		out, keep := translateRune(r, set1, set2, del, complement)
 		if !keep {
 			continue

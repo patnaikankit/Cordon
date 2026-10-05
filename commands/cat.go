@@ -23,11 +23,14 @@ func (catCmd) Run(ctx context.Context, ec *command.Context) error {
 
 	write := func(r io.Reader) error {
 		if !number {
-			_, err := io.Copy(ec.Stdout, r)
+			_, err := copyContext(ctx, ec.Stdout, r)
 			return err
 		}
 		sc := newLineScanner(r)
 		for sc.Scan() {
+			if ctx != nil && ctx.Err() != nil {
+				return ctx.Err()
+			}
 			fmt.Fprintf(ec.Stdout, "%6d\t%s\n", line, sc.Text())
 			line++
 		}
@@ -43,6 +46,9 @@ func (catCmd) Run(ctx context.Context, ec *command.Context) error {
 
 	exit := 0
 	for _, name := range o.args {
+		if ctx != nil && ctx.Err() != nil {
+			return ctx.Err()
+		}
 		if name == "-" {
 			if err := write(ec.StdinReader()); err != nil {
 				ec.Errorf("cat: %v\n", err)

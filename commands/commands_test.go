@@ -414,15 +414,72 @@ func TestCutAndTr(t *testing.T) {
 	}
 }
 
+func TestBase64(t *testing.T) {
+	mem := fs.Mem().Seed(map[string]string{
+		"/hello.txt": "Hello, Cordon!\n",
+	})
+
+	// 1. Encode from stdin
+	out, _, code := runCmd(t, commands.Base64, mem, "Cordon Sandbox")
+	if code != 0 || strings.TrimSpace(out) != "Q29yZG9uIFNhbmRib3g=" {
+		t.Fatalf("base64 encode stdin failed: code=%d, out=%q", code, out)
+	}
+
+	// 2. Decode from stdin (-d)
+	out, _, code = runCmd(t, commands.Base64, mem, "Q29yZG9uIFNhbmRib3g=", "-d")
+	if code != 0 || out != "Cordon Sandbox" {
+		t.Fatalf("base64 decode stdin failed: code=%d, out=%q", code, out)
+	}
+
+	// 3. Encode file
+	out, _, code = runCmd(t, commands.Base64, mem, "", "/hello.txt")
+	if code != 0 || strings.TrimSpace(out) != "SGVsbG8sIENvcmRvbiEK" {
+		t.Fatalf("base64 encode file failed: %q", out)
+	}
+
+	// 4. Invalid base64 decode input
+	_, stderr, code := runCmd(t, commands.Base64, mem, "not-valid-base64!!!", "-d")
+	if code != 1 || !strings.Contains(stderr, "invalid") {
+		t.Fatalf("expected error on invalid base64, got code=%d, stderr=%q", code, stderr)
+	}
+}
+
+func TestSha256sum(t *testing.T) {
+	mem := fs.Mem().Seed(map[string]string{
+		"/msg.txt": "hello\n",
+	})
+
+	// 1. Stdin
+	out, _, code := runCmd(t, commands.Sha256sum, mem, "hello\n")
+	if code != 0 {
+		t.Fatalf("sha256sum stdin failed: code=%d", code)
+	}
+	expectedStdinHash := "5891b5b522d5df086d0ff0b110fbd9d21bb4fc7163af34d08286a2e846f6be03  -\n"
+	if out != expectedStdinHash {
+		t.Fatalf("sha256sum got %q, want %q", out, expectedStdinHash)
+	}
+
+	// 2. File
+	out, _, code = runCmd(t, commands.Sha256sum, mem, "", "/msg.txt")
+	if code != 0 {
+		t.Fatalf("sha256sum file failed: code=%d", code)
+	}
+	expectedFileHash := "5891b5b522d5df086d0ff0b110fbd9d21bb4fc7163af34d08286a2e846f6be03  /msg.txt\n"
+	if out != expectedFileHash {
+		t.Fatalf("sha256sum file got %q, want %q", out, expectedFileHash)
+	}
+}
+
 func TestAllAndCoreRegistration(t *testing.T) {
 	allCmds := commands.All()
-	if len(allCmds) != 15 {
-		t.Fatalf("expected 15 core commands in v1, got %d", len(allCmds))
+	if len(allCmds) != 17 {
+		t.Fatalf("expected 17 core commands in v1, got %d", len(allCmds))
 	}
 
 	expectedNames := map[string]bool{
 		"cat": true, "ls": true, "pwd": true, "mkdir": true, "rm": true, "cp": true, "mv": true,
 		"head": true, "tail": true, "wc": true, "grep": true, "sort": true, "uniq": true, "cut": true, "tr": true,
+		"base64": true, "sha256sum": true,
 	}
 
 	for _, c := range allCmds {

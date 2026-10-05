@@ -79,6 +79,9 @@ func (wcCmd) Run(ctx context.Context, ec *command.Context) error {
 	var total wcCounts
 	exit := 0
 	for _, name := range o.args {
+		if ctx != nil && ctx.Err() != nil {
+			return ctx.Err()
+		}
 		var (
 			data []byte
 			err  error
