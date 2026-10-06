@@ -1,0 +1,45 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    name: Test & Verify
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ ubuntu-latest, macos-latest ]
+        go-version: [ '1.25.x' ]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ matrix.go-version }}
+          cache: true
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Run go vet
+        run: go vet ./...
+
+      - name: Run Go test suite with race detector
+        run: go test -v -race -coverprofile=coverage.txt -covermode=atomic ./...
+
+      - name: Run Python SDK tests
+        run: PYTHONPATH=sdk/python python3 -m unittest discover -s sdk/python/tests
+
+      - name: Test reproducible build
+        run: |
+          chmod +x scripts/build.sh
+          ./scripts/build.sh

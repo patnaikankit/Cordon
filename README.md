@@ -207,10 +207,19 @@ See [`docs/threat-model.md`](docs/threat-model.md) for full threat modeling and 
 
 ---
 
-## Running Tests
+## Verification & Benchmarks
 
 Run the full test suite with race detection enabled:
 
 ```bash
 go test -v -race ./...
 ```
+
+Run the performance benchmarks:
+
+```bash
+go test -bench=. -benchmem ./internal/benchmark/...
+```
+
+See [`docs/benchmarks.md`](docs/benchmarks.md) for detailed performance numbers and [`docs/limitations.md`](docs/limitations.md) for documented security boundaries and out-of-scope capabilities.
+
