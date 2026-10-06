@@ -291,6 +291,12 @@ func TestCapabilitiesBundle(t *testing.T) {
 	if caps.FS() == nil {
 		t.Errorf("expected non-nil FS from Resources()")
 	}
+	if caps.HTTPClient() == nil {
+		t.Errorf("expected non-nil HTTPClient from Resources()")
+	}
+	if caps.Dialer() == nil {
+		t.Errorf("expected non-nil Dialer from Resources()")
+	}
 
 	childCtx, cancel := caps.Context(context.Background())
 	defer cancel()

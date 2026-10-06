@@ -48,6 +48,19 @@ func (c Capabilities) DialContext(ctx context.Context, network, address string) 
 	return c.net.DialContext(ctx, network, address)
 }
 
+// Dialer returns a netpolicy.Dialer bound to the sandbox's network policy.
+func (c Capabilities) Dialer() netpolicy.Dialer {
+	return &capabilityDialer{caps: c}
+}
+
+type capabilityDialer struct {
+	caps Capabilities
+}
+
+func (d *capabilityDialer) DialContext(ctx context.Context, network, address string) (net.Conn, error) {
+	return d.caps.DialContext(ctx, network, address)
+}
+
 // Context derives a child context honoring the configured sandbox timeout (if any).
 // Callers must invoke the returned CancelFunc when finished.
 func (c Capabilities) Context(parent context.Context) (context.Context, context.CancelFunc) {

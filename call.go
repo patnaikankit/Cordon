@@ -231,6 +231,16 @@ func (cs *callSupervisor) Execute(fn runFn) Result {
 		isErr := res.err != nil || exitCode != 0 || wasLimited || cs.cmdBudget.IsLimited()
 
 		switch {
+		case errors.Is(res.err, context.DeadlineExceeded) || errors.Is(res.err, status.ErrTimeout):
+			exitCode = status.StatusTimeout
+			if stderrStr == "" {
+				stderrStr = "cordon: execution timed out\n"
+			}
+		case errors.Is(res.err, context.Canceled) || errors.Is(res.err, status.ErrCanceled):
+			exitCode = status.StatusCanceled
+			if stderrStr == "" {
+				stderrStr = "cordon: execution canceled\n"
+			}
 		case errors.Is(res.err, status.ErrPolicyDenied):
 			if exitCode == 0 {
 				exitCode = status.StatusPolicyDenied

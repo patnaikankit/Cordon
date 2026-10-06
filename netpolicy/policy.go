@@ -183,6 +183,16 @@ func (p Policy) ValidateHostPort(host string, port int) error {
 	// Strip enclosing brackets if host is an IPv6 literal (e.g. "[::1]")
 	host = strings.TrimPrefix(strings.TrimSuffix(host, "]"), "[")
 
+	// SSRF protection: reject private/loopback/cloud-metadata IP literals and metadata hosts
+	if !p.AllowPrivateIPs {
+		if strings.EqualFold(host, "metadata.google.internal") {
+			return fmt.Errorf("%w: cloud metadata host blocked: %s", ErrPrivateIPBlocked, host)
+		}
+		if ip := net.ParseIP(host); ip != nil && IsBlockedIP(ip) {
+			return fmt.Errorf("%w: private/loopback/metadata IP blocked: %s", ErrPrivateIPBlocked, host)
+		}
+	}
+
 	// 1. Check Deny rules first (Deny rules always take precedence)
 	for _, rule := range p.Deny {
 		if matchHost(rule.Host, host) && matchPort(rule.Ports, port) {
